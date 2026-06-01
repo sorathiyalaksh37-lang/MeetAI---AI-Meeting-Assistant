@@ -1,5 +1,12 @@
 # 🧠 MeetAI - AI Meeting Assistant
 
+![React](https://img.shields.io/badge/React-18.2.0-61dafb)
+![Node](https://img.shields.io/badge/Node-18.x-339933)
+![MongoDB](https://img.shields.io/badge/MongoDB-6.x-47A248)
+![Socket.io](https://img.shields.io/badge/Socket.io-4.x-010101)
+![Tailwind](https://img.shields.io/badge/Tailwind-3.x-06B6D4)
+![License](https://img.shields.io/badge/License-MIT-yellow)
+
 ![Demo](https://img.shields.io/badge/version-1.0.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![React](https://img.shields.io/badge/React-18.2.0-blue)

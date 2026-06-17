@@ -1,15 +1,30 @@
 import express from "express";
 import Task from "../models/Task.js";
+import Meeting from "../models/Meeting.js";
+import authMiddleware from "../middleware/authMiddleware.js";
+import { sendEmail } from "../utils/sendEmail.js";
 
 const router = express.Router();
 
 // =========================
-// GET ALL TASKS FOR A MEETING
+// GET TASKS FOR A MEETING (with auth check)
 // =========================
-router.get("/meeting/:meetingId", async (req, res) => {
+router.get("/meeting/:meetingId", authMiddleware, async (req, res) => {
   try {
-    const tasks = await Task.find({ meetingId: req.params.meetingId });
-    console.log(`Found ${tasks.length} tasks for meeting ${req.params.meetingId}`);
+    const { meetingId } = req.params;
+    const userId = req.user.id;
+    
+    // Verify meeting belongs to user
+    const meeting = await Meeting.findById(meetingId);
+    if (!meeting) {
+      return res.status(404).json({ message: "Meeting not found" });
+    }
+    if (meeting.createdBy && meeting.createdBy.toString() !== userId) {
+      return res.status(403).json({ message: "Access denied" });
+    }
+    
+    const tasks = await Task.find({ meetingId });
+    console.log(`Found ${tasks.length} tasks for meeting ${meetingId}`);
     res.json(tasks);
   } catch (err) {
     console.error("Error fetching tasks:", err);
@@ -20,7 +35,7 @@ router.get("/meeting/:meetingId", async (req, res) => {
 // =========================
 // GET SINGLE TASK
 // =========================
-router.get("/:id", async (req, res) => {
+router.get("/:id", authMiddleware, async (req, res) => {
   try {
     const task = await Task.findById(req.params.id);
     if (!task) {
@@ -33,9 +48,9 @@ router.get("/:id", async (req, res) => {
 });
 
 // =========================
-// COMPLETE/UNDO TASK
+// COMPLETE/UNDO TASK (with notification)
 // =========================
-router.put("/:id/complete", async (req, res) => {
+router.put("/:id/complete", authMiddleware, async (req, res) => {
   try {
     console.log("🔄 Complete/Undo request for task ID:", req.params.id);
     
@@ -49,15 +64,48 @@ router.put("/:id/complete", async (req, res) => {
       });
     }
     
+    // Verify user has access to this task's meeting
+    const meeting = await Meeting.findById(task.meetingId);
+    if (meeting && meeting.createdBy && meeting.createdBy.toString() !== req.user.id) {
+      return res.status(403).json({ 
+        success: false, 
+        message: "Access denied" 
+      });
+    }
+    
+    const wasCompleted = task.status === "Completed";
+    
     // Toggle status
-    if (task.status === "Completed") {
+    if (wasCompleted) {
       task.status = "Pending";
       task.completedAt = null;
+      task.reminderSent = false;
       console.log("✅ Task marked as Pending");
     } else {
       task.status = "Completed";
       task.completedAt = new Date();
+      task.reminderSent = true;
       console.log("✅ Task marked as Completed");
+      
+      // Send completion notification
+      if (task.assignedTo && task.assignedTo.includes('@')) {
+        await sendEmail(
+          task.assignedTo,
+          "✅ Task Completed - AI Meeting Assistant",
+          `
+Congratulations! You've completed:
+
+📌 Task: ${task.task}
+📅 Due Date: ${task.dueDate}
+✅ Completed on: ${new Date().toLocaleString()}
+
+Great work! 🎉
+
+- AI Meeting Assistant
+          `
+        );
+        console.log(`✅ Completion email sent to ${task.assignedTo}`);
+      }
     }
     
     await task.save();
@@ -79,19 +127,28 @@ router.put("/:id/complete", async (req, res) => {
 // =========================
 // DELETE TASK
 // =========================
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", authMiddleware, async (req, res) => {
   try {
     console.log("🗑️ Delete request for task ID:", req.params.id);
     
-    const task = await Task.findByIdAndDelete(req.params.id);
-    
+    const task = await Task.findById(req.params.id);
     if (!task) {
-      console.log("❌ Task not found for deletion:", req.params.id);
       return res.status(404).json({ 
         success: false, 
         message: "Task not found" 
       });
     }
+    
+    // Verify user has access to this task's meeting
+    const meeting = await Meeting.findById(task.meetingId);
+    if (meeting && meeting.createdBy && meeting.createdBy.toString() !== req.user.id) {
+      return res.status(403).json({ 
+        success: false, 
+        message: "Access denied" 
+      });
+    }
+    
+    await Task.findByIdAndDelete(req.params.id);
     
     console.log("✅ Task deleted successfully");
     res.json({ 
@@ -109,11 +166,14 @@ router.delete("/:id", async (req, res) => {
 });
 
 // =========================
-// GET ALL TASKS (Debug)
+// GET ALL TASKS (Debug - Only user's meetings)
 // =========================
-router.get("/", async (req, res) => {
+router.get("/", authMiddleware, async (req, res) => {
   try {
-    const tasks = await Task.find().sort({ createdAt: -1 });
+    const userId = req.user.id;
+    const userMeetings = await Meeting.find({ createdBy: userId }).select('_id');
+    const meetingIds = userMeetings.map(m => m._id);
+    const tasks = await Task.find({ meetingId: { $in: meetingIds } }).sort({ createdAt: -1 });
     res.json(tasks);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -123,17 +183,50 @@ router.get("/", async (req, res) => {
 // =========================
 // DEBUG - Check tasks by meeting
 // =========================
-router.get("/debug/:meetingId", async (req, res) => {
+router.get("/debug/:meetingId", authMiddleware, async (req, res) => {
   try {
-    const tasks = await Task.find({ meetingId: req.params.meetingId });
-    console.log(`Debug: Found ${tasks.length} tasks for meeting ${req.params.meetingId}`);
+    const { meetingId } = req.params;
+    const userId = req.user.id;
+    
+    const meeting = await Meeting.findById(meetingId);
+    if (!meeting) {
+      return res.status(404).json({ error: "Meeting not found" });
+    }
+    if (meeting.createdBy && meeting.createdBy.toString() !== userId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    
+    const tasks = await Task.find({ meetingId });
+    console.log(`Debug: Found ${tasks.length} tasks for meeting ${meetingId}`);
     res.json({ 
       count: tasks.length, 
       tasks: tasks,
-      meetingId: req.params.meetingId 
+      meetingId: meetingId 
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// =========================
+// GET TASKS BY ASSIGNED PERSON (Only user's meetings)
+// =========================
+router.get("/assigned/:email", authMiddleware, async (req, res) => {
+  try {
+    const { email } = req.params;
+    const userId = req.user.id;
+    
+    const userMeetings = await Meeting.find({ createdBy: userId }).select('_id');
+    const meetingIds = userMeetings.map(m => m._id);
+    
+    const tasks = await Task.find({ 
+      meetingId: { $in: meetingIds },
+      assignedTo: { $regex: new RegExp(email, 'i') }
+    }).populate('meetingId', 'title');
+    
+    res.json(tasks);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 });
 

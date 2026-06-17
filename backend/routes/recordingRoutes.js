@@ -1,3 +1,4 @@
+// server/routes/recordingRoutes.js
 import express from "express";
 import multer from "multer";
 import { ObjectId } from "mongodb";
@@ -8,20 +9,12 @@ import { getGridFSBucket } from "../config/gridfs.js";
 
 const router = express.Router();
 
-// Configure multer for memory storage (since GridFS handles the actual storage)
+// Configure multer for memory storage
 const storage = multer.memoryStorage();
 const upload = multer({ 
   storage: storage,
   limits: {
-    fileSize: 100 * 1024 * 1024 // 100MB limit
-  },
-  fileFilter: (req, file, cb) => {
-    const allowedTypes = ['audio/webm', 'audio/mpeg', 'audio/mp3', 'video/mp4', 'video/webm'];
-    if (allowedTypes.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error('Invalid file type. Only audio and video files are allowed.'));
-    }
+    fileSize: 50 * 1024 * 1024 // 50MB limit
   }
 });
 
@@ -33,6 +26,8 @@ router.post("/upload/:meetingId", authMiddleware, upload.single("file"), async (
     const { meetingId } = req.params;
     const { type, duration } = req.body;
     const file = req.file;
+    
+    console.log("Upload request:", { meetingId, type, duration, fileSize: file?.size });
     
     if (!file) {
       return res.status(400).json({ error: "No file uploaded" });
@@ -46,13 +41,14 @@ router.post("/upload/:meetingId", authMiddleware, upload.single("file"), async (
     // Get GridFS bucket
     const bucket = getGridFSBucket();
     if (!bucket) {
-      return res.status(500).json({ error: "GridFS not initialized" });
+      console.error("GridFS not initialized");
+      return res.status(500).json({ error: "Storage not initialized" });
     }
     
     // Create upload stream
     const filename = `${Date.now()}-${file.originalname}`;
     const uploadStream = bucket.openUploadStream(filename, {
-      contentType: file.mimetype,
+      contentType: file.mimetype || 'audio/webm',
       metadata: {
         meetingId: meetingId,
         uploadedBy: req.user.id,
@@ -64,46 +60,58 @@ router.post("/upload/:meetingId", authMiddleware, upload.single("file"), async (
     uploadStream.end(file.buffer);
     
     uploadStream.on('finish', async () => {
-      // Save recording metadata to database
-      const recording = await Recording.create({
-        meetingId: meetingId,
-        filename: filename,
-        originalName: file.originalname,
-        type: type || "audio",
-        size: file.size,
-        duration: duration || 0,
-        mimeType: file.mimetype,
-        fileId: uploadStream.id,
-        uploadedBy: req.user.id,
-        status: "completed"
-      });
-      
-      // Update meeting with recording reference
-      await Meeting.findByIdAndUpdate(meetingId, {
-        $push: {
-          recordings: {
-            recordingId: recording._id,
-            filename: filename,
-            uploadedAt: new Date()
+      try {
+        // Save recording metadata to database
+        const recording = await Recording.create({
+          meetingId: meetingId,
+          filename: filename,
+          originalName: file.originalname,
+          type: type || "audio",
+          size: file.size,
+          duration: duration || 0,
+          mimeType: file.mimetype || 'audio/webm',
+          fileId: uploadStream.id,
+          uploadedBy: req.user.id,
+          status: "completed"
+        });
+        
+        // Update meeting with recording reference
+        await Meeting.findByIdAndUpdate(meetingId, {
+          $push: {
+            recordings: {
+              recordingId: recording._id,
+              filename: filename,
+              originalName: file.originalname,
+              type: type || "audio",
+              size: file.size,
+              duration: duration || 0,
+              uploadedAt: new Date(),
+              uploadedBy: req.user.id
+            }
           }
-        }
-      });
-      
-      res.json({
-        success: true,
-        recording: {
-          id: recording._id,
-          filename: recording.filename,
-          size: recording.size,
-          type: recording.type,
-          createdAt: recording.createdAt
-        }
-      });
+        });
+        
+        console.log("Recording saved:", recording._id);
+        
+        res.json({
+          success: true,
+          recording: {
+            id: recording._id,
+            filename: recording.filename,
+            size: recording.size,
+            type: recording.type,
+            createdAt: recording.createdAt
+          }
+        });
+      } catch (err) {
+        console.error("Save metadata error:", err);
+        res.status(500).json({ error: "Failed to save recording metadata" });
+      }
     });
     
     uploadStream.on('error', (error) => {
       console.error("Upload error:", error);
-      res.status(500).json({ error: "Upload failed" });
+      res.status(500).json({ error: "Upload failed: " + error.message });
     });
     
   } catch (err) {
@@ -121,7 +129,7 @@ router.get("/meeting/:meetingId", authMiddleware, async (req, res) => {
     
     const recordings = await Recording.find({ meetingId })
       .sort({ createdAt: -1 })
-      .select('-fileId'); // Exclude fileId for list view
+      .select('-fileId');
     
     res.json({
       success: true,
@@ -149,14 +157,12 @@ router.get("/download/:recordingId", authMiddleware, async (req, res) => {
     
     const bucket = getGridFSBucket();
     if (!bucket) {
-      return res.status(500).json({ error: "GridFS not initialized" });
+      return res.status(500).json({ error: "Storage not initialized" });
     }
     
-    // Set response headers
-    res.setHeader('Content-Type', recording.mimeType);
-    res.setHeader('Content-Disposition', `attachment; filename="${recording.originalName}"`);
+    res.setHeader('Content-Type', recording.mimeType || 'audio/webm');
+    res.setHeader('Content-Disposition', `attachment; filename="${recording.originalName || 'recording.webm'}"`);
     
-    // Create download stream
     const downloadStream = bucket.openDownloadStream(recording.fileId);
     
     downloadStream.on('error', (error) => {
@@ -168,6 +174,34 @@ router.get("/download/:recordingId", authMiddleware, async (req, res) => {
     
   } catch (err) {
     console.error("Download error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// =========================
+// STREAM RECORDING
+// =========================
+router.get("/stream/:recordingId", authMiddleware, async (req, res) => {
+  try {
+    const { recordingId } = req.params;
+    
+    const recording = await Recording.findById(recordingId);
+    if (!recording) {
+      return res.status(404).json({ error: "Recording not found" });
+    }
+    
+    const bucket = getGridFSBucket();
+    if (!bucket) {
+      return res.status(500).json({ error: "Storage not initialized" });
+    }
+    
+    res.setHeader('Content-Type', recording.mimeType || 'audio/webm');
+    
+    const downloadStream = bucket.openDownloadStream(recording.fileId);
+    downloadStream.pipe(res);
+    
+  } catch (err) {
+    console.error("Stream error:", err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -186,14 +220,11 @@ router.delete("/:recordingId", authMiddleware, async (req, res) => {
     
     const bucket = getGridFSBucket();
     if (bucket) {
-      // Delete from GridFS
       await bucket.delete(recording.fileId);
     }
     
-    // Delete from database
     await Recording.findByIdAndDelete(recordingId);
     
-    // Remove from meeting
     await Meeting.findByIdAndUpdate(recording.meetingId, {
       $pull: {
         recordings: { recordingId: recordingId }
@@ -207,34 +238,6 @@ router.delete("/:recordingId", authMiddleware, async (req, res) => {
     
   } catch (err) {
     console.error("Delete error:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// =========================
-// STREAM RECORDING (for playback)
-// =========================
-router.get("/stream/:recordingId", authMiddleware, async (req, res) => {
-  try {
-    const { recordingId } = req.params;
-    
-    const recording = await Recording.findById(recordingId);
-    if (!recording) {
-      return res.status(404).json({ error: "Recording not found" });
-    }
-    
-    const bucket = getGridFSBucket();
-    if (!bucket) {
-      return res.status(500).json({ error: "GridFS not initialized" });
-    }
-    
-    res.setHeader('Content-Type', recording.mimeType);
-    
-    const downloadStream = bucket.openDownloadStream(recording.fileId);
-    downloadStream.pipe(res);
-    
-  } catch (err) {
-    console.error("Stream error:", err);
     res.status(500).json({ error: err.message });
   }
 });

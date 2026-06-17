@@ -16,12 +16,7 @@ const taskSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: [
-        "Pending",
-        "In Progress",
-        "Completed",
-        "Overdue",
-      ],
+      enum: ["Pending", "In Progress", "Completed", "Overdue"],
       default: "Pending",
     },
 
@@ -33,15 +28,37 @@ const taskSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Meeting",
     },
+    
+    // NEW: Reminder tracking
+    reminderSent: {
+      type: Boolean,
+      default: false
+    },
+    
+    reminderCount: {
+      type: Number,
+      default: 0
+    },
+    
+    lastReminderSent: {
+      type: Date
+    },
+    
+    priority: {
+      type: String,
+      enum: ["Low", "Medium", "High"],
+      default: "Medium"
+    }
   },
   {
     timestamps: true,
   }
 );
 
-const Task = mongoose.model(
-  "Task",
-  taskSchema
-);
+// Index for faster queries
+taskSchema.index({ assignedTo: 1, status: 1 });
+taskSchema.index({ dueDate: 1, status: 1 });
+taskSchema.index({ meetingId: 1 });
 
-export default Task;  
+const Task = mongoose.model("Task", taskSchema);
+export default Task;

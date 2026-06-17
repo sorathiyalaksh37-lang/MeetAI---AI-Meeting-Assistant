@@ -1,3 +1,4 @@
+// server/config/gridfs.js
 import mongoose from "mongoose";
 import Grid from "gridfs-stream";
 

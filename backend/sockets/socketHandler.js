@@ -92,14 +92,11 @@ If none found, return empty arrays. No explanation, only JSON.`,
             try {
               const parsed = JSON.parse(enhancedContent);
               
-              // Prepare update object
               const updateObj = {};
-              
               if (parsed.summary) {
                 updateObj.aiSummary = parsed.summary;
               }
               
-              // Update meeting with summary, decisions, risks
               await Meeting.findByIdAndUpdate(meetingId, {
                 $set: updateObj,
                 $push: {
@@ -108,7 +105,6 @@ If none found, return empty arrays. No explanation, only JSON.`,
                 },
               });
               
-              // Send updated summary to frontend
               io.to(meetingId).emit("meeting-summary-updated", {
                 summary: parsed.summary,
                 decisions: parsed.decisions || [],
@@ -140,9 +136,10 @@ If none found, return empty arrays. No explanation, only JSON.`,
               messages: [
                 {
                   role: "system",
-                  content: `You are a meeting assistant. Extract action items from the message.
-Return ONLY a JSON array. Examples:
+                  content: `You are a meeting assistant. Extract ONLY ONE action item from the message if present.
+Return ONLY a JSON array with ONE item maximum. 
 
+Examples:
 Message: "John should update the website by Friday"
 Output: [{"task":"Update the website","assignedTo":"John","dueDate":"Friday"}]
 
@@ -155,8 +152,10 @@ Output: [{"task":"Approve new budget","assignedTo":"Team","dueDate":"No deadline
 Message: "No action items here"
 Output: []
 
-Rules:
-- If no action item, return []
+IMPORTANT RULES:
+- Extract ONLY the most important action item from the message
+- If multiple action items, pick only ONE
+- If no clear action item, return []
 - Return ONLY valid JSON, no extra text
 - Always return an array`,
                 },
@@ -171,8 +170,6 @@ Rules:
         );
 
         const aiData = await response.json();
-        console.log("AI Response:", JSON.stringify(aiData, null, 2));
-
         const content = aiData?.choices?.[0]?.message?.content;
 
         if (!content) {
@@ -207,6 +204,18 @@ Rules:
             continue;
           }
 
+          // Check if task already exists in this meeting
+          const existingTask = await Task.findOne({
+            meetingId: meetingId,
+            task: { $regex: new RegExp(item.task, 'i') },
+            status: "Pending"
+          });
+
+          if (existingTask) {
+            console.log("Task already exists, skipping duplicate:", item.task);
+            continue;
+          }
+
           console.log("Creating task in database:", item);
 
           const newTask = await Task.create({
@@ -232,6 +241,9 @@ Rules:
 
           // Emit to frontend
           io.to(meetingId).emit("new-task", newTask);
+          
+          // Also emit to update team dashboard
+          io.emit("task-updated", { meetingId, task: newTask });
         }
       } catch (err) {
         console.error("Socket error:", err);

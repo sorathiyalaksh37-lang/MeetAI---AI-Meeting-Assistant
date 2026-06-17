@@ -18,17 +18,29 @@ export default function Meeting() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [summary, setSummary] = useState(null);
+  const [fetchError, setFetchError] = useState(null);
   const transcriptEndRef = useRef(null);
+  const transcriptContainerRef = useRef(null);
 
   // =========================
   // FETCH MEETING DATA
   // =========================
   const fetchMeeting = async () => {
     try {
+      setFetchError(null);
       console.log("Fetching meeting:", id);
       
+      const token = localStorage.getItem('token');
+      if (!token) {
+        console.error("No token found");
+        setFetchError("Please login again");
+        return;
+      }
+      
+      // Fetch meeting data
       const res = await axios.get(
-        `http://localhost:5001/api/meetings/${id}`
+        `http://localhost:5001/api/meetings/${id}`,
+        { headers: { Authorization: token } }
       );
       
       console.log("Meeting data:", res.data);
@@ -40,15 +52,34 @@ export default function Meeting() {
         risks: res.data.risks || []
       });
       
-      const tasksRes = await axios.get(
-        `http://localhost:5001/api/tasks/meeting/${id}`
-      );
-      
-      console.log("Tasks from API:", tasksRes.data);
-      setTasks(tasksRes.data || []);
+      // Fetch tasks separately with better error handling
+      try {
+        const tasksRes = await axios.get(
+          `http://localhost:5001/api/tasks/meeting/${id}`,
+          { headers: { Authorization: token } }
+        );
+        
+        console.log("Tasks from API:", tasksRes.data);
+        setTasks(tasksRes.data || []);
+        
+        if (tasksRes.data.length === 0) {
+          console.log("No tasks found for this meeting");
+        }
+      } catch (taskErr) {
+        console.error("Error fetching tasks:", taskErr);
+        // Don't fail the whole page if tasks fail
+        setTasks([]);
+      }
       
     } catch (err) {
       console.error("Error fetching meeting:", err);
+      if (err.response?.status === 403) {
+        setFetchError("You don't have access to this meeting");
+      } else if (err.response?.status === 404) {
+        setFetchError("Meeting not found");
+      } else {
+        setFetchError("Error loading meeting");
+      }
     } finally {
       setLoading(false);
     }
@@ -58,9 +89,13 @@ export default function Meeting() {
     fetchMeeting();
   }, [id]);
 
+  // Auto-scroll to bottom when new transcript arrives
   useEffect(() => {
     if (transcriptEndRef.current) {
-      transcriptEndRef.current.scrollIntoView({ behavior: "smooth" });
+      transcriptEndRef.current.scrollIntoView({ 
+        behavior: "smooth",
+        block: "end"
+      });
     }
   }, [transcript]);
 
@@ -155,8 +190,11 @@ export default function Meeting() {
     }
     
     try {
+      const token = localStorage.getItem('token');
       const response = await axios.put(
-        `http://localhost:5001/api/tasks/${taskId}/complete`
+        `http://localhost:5001/api/tasks/${taskId}/complete`,
+        {},
+        { headers: { Authorization: token } }
       );
       
       console.log("Response:", response.data);
@@ -200,8 +238,10 @@ export default function Meeting() {
     if (!confirmDelete) return;
     
     try {
+      const token = localStorage.getItem('token');
       const response = await axios.delete(
-        `http://localhost:5001/api/tasks/${taskId}`
+        `http://localhost:5001/api/tasks/${taskId}`,
+        { headers: { Authorization: token } }
       );
       
       console.log("Delete response:", response.data);
@@ -232,12 +272,15 @@ export default function Meeting() {
   // =========================
   const debugTasks = async () => {
     try {
-      const res = await axios.get(`http://localhost:5001/api/tasks/debug/${id}`);
+      const token = localStorage.getItem('token');
+      const res = await axios.get(`http://localhost:5001/api/tasks/debug/${id}`, {
+        headers: { Authorization: token }
+      });
       console.log("Debug - All tasks in DB:", res.data);
       alert(`Found ${res.data.count} tasks in database for this meeting`);
     } catch (err) {
       console.error("Debug error:", err);
-      alert("Error checking tasks");
+      alert("Error checking tasks: " + (err.response?.data?.error || err.message));
     }
   };
 
@@ -257,36 +300,62 @@ export default function Meeting() {
     );
   }
 
+  // =========================
+  // ERROR SCREEN
+  // =========================
+  if (fetchError) {
+    return (
+      <Layout>
+        <div className="h-[80vh] flex items-center justify-center">
+          <div className="text-center bg-red-500/10 border border-red-500/30 rounded-3xl p-8 max-w-md">
+            <div className="text-6xl mb-4">🚫</div>
+            <h2 className="text-2xl font-bold text-red-400 mb-2">Access Denied</h2>
+            <p className="text-gray-400">{fetchError}</p>
+            <button
+              onClick={() => window.location.href = '/'}
+              className="mt-4 bg-blue-500 hover:bg-blue-600 px-6 py-2 rounded-xl transition"
+            >
+              Go to Dashboard
+            </button>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
+
   return (
     <Layout>
       {/* TOP HEADER */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5 mb-6">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-4xl font-bold text-white">🧠 AI Meeting Assistant</h1>
-          <p className="text-gray-400 mt-2">Smart real-time collaboration with voice AI</p>
-          <p className="text-gray-500 text-sm mt-2 break-all">Meeting ID: {id}</p>
+          <h1 className="text-3xl lg:text-4xl font-bold text-white">🧠 AI Meeting Assistant</h1>
+          <p className="text-gray-400 mt-1 text-sm">Smart real-time collaboration with voice AI</p>
+          <p className="text-gray-500 text-xs mt-1 break-all">Meeting ID: {id}</p>
         </div>
         
-        <div className="flex gap-3 flex-wrap">
-          {/* Pass socket to RecordingRecorder for real-time task extraction */}
+        {/* Header Buttons */}
+        <div className="flex flex-wrap items-center gap-2">
           <RecordingRecorder 
             meetingId={id} 
-            onRecordingComplete={() => console.log("Recording saved")}
+            onRecordingComplete={() => {
+              console.log("Recording saved");
+              fetchMeeting(); // Refresh tasks after recording
+            }}
             socket={socket}
           />
           <button
             onClick={debugTasks}
-            className="bg-yellow-600 hover:bg-yellow-700 transition px-6 py-3 rounded-2xl font-semibold"
+            className="bg-yellow-600 hover:bg-yellow-700 transition px-3 py-2 rounded-2xl font-semibold text-xs whitespace-nowrap"
           >
-            🔍 Debug Tasks
+            🔍 Debug
           </button>
           <a
             href={`http://localhost:5001/api/report/${id}`}
             target="_blank"
             rel="noreferrer"
-            className="bg-purple-600 hover:bg-purple-700 transition px-6 py-3 rounded-2xl font-semibold"
+            className="bg-purple-600 hover:bg-purple-700 transition px-3 py-2 rounded-2xl font-semibold text-xs whitespace-nowrap"
           >
-            Download PDF
+            📄 PDF
           </a>
         </div>
       </div>
@@ -301,26 +370,31 @@ export default function Meeting() {
       />
 
       {/* MAIN GRID */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-[calc(80vh-200px)]">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6" style={{ height: 'calc(100vh - 380px)' }}>
         {/* LEFT SIDE - TRANSCRIPT */}
-        <div className="bg-[#111827] border border-[#1f2937] rounded-3xl p-5 flex flex-col shadow-2xl">
-          <div className="flex items-center justify-between mb-5">
+        <div className="bg-[#111827] border border-[#1f2937] rounded-3xl p-4 flex flex-col shadow-2xl min-h-0">
+          <div className="flex items-center justify-between mb-4 flex-shrink-0">
             <div>
-              <h2 className="text-2xl font-bold">🎤 Live Transcript</h2>
-              <p className="text-gray-400 text-sm mt-1">Real-time meeting discussion</p>
+              <h2 className="text-xl font-bold">🎤 Live Transcript</h2>
+              <p className="text-gray-400 text-xs mt-0.5">Real-time meeting discussion</p>
             </div>
-            <div className="flex items-center gap-2 bg-green-500/10 px-3 py-2 rounded-full">
-              <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
-              <span className="text-green-400 text-sm">Live</span>
+            <div className="flex items-center gap-2 bg-green-500/10 px-3 py-1.5 rounded-full flex-shrink-0">
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+              <span className="text-green-400 text-xs">Live</span>
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto space-y-3 pr-2">
+          {/* Transcript Container */}
+          <div 
+            ref={transcriptContainerRef}
+            className="flex-1 overflow-y-auto space-y-2 pr-1 min-h-0"
+            style={{ maxHeight: '100%' }}
+          >
             {transcript.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-gray-500">
-                <div className="text-6xl mb-4">🎙️</div>
-                <p>Start meeting conversation...</p>
-                <p className="text-sm mt-2">Try voice input or type a message</p>
+                <div className="text-5xl mb-3">🎙️</div>
+                <p className="text-sm">Start meeting conversation...</p>
+                <p className="text-xs mt-1">Try voice input or type a message</p>
               </div>
             ) : (
               <>
@@ -328,15 +402,15 @@ export default function Meeting() {
                   <div 
                     key={i} 
                     id={`transcript-message-${i}`}
-                    className="bg-[#0b1220] border border-[#1d2942] p-4 rounded-2xl transition-all duration-300 hover:border-blue-500/50"
+                    className="bg-[#0b1220] border border-[#1d2942] p-3 rounded-xl transition-all duration-300 hover:border-blue-500/50 flex-shrink-0"
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-blue-400 font-semibold">{t.sender}</span>
+                      <span className="text-blue-400 font-semibold text-sm">{t.sender}</span>
                       <span className="text-xs text-gray-500">
                         {t.time ? new Date(t.time).toLocaleTimeString() : 'Just now'}
                       </span>
                     </div>
-                    <p className="mt-3 text-gray-200 leading-relaxed">{t.text}</p>
+                    <p className="mt-2 text-gray-200 leading-relaxed text-sm">{t.text}</p>
                   </div>
                 ))}
                 <div ref={transcriptEndRef} />
@@ -344,8 +418,8 @@ export default function Meeting() {
             )}
           </div>
 
-          {/* INPUT SECTION WITH VOICE */}
-          <div className="flex gap-3 mt-5">
+          {/* INPUT SECTION */}
+          <div className="flex gap-2 mt-4 flex-shrink-0">
             <input
               value={text}
               onChange={(e) => setText(e.target.value)}
@@ -355,7 +429,7 @@ export default function Meeting() {
                 }
               }}
               placeholder="Type meeting discussion or use voice input..."
-              className="flex-1 bg-[#0b1220] border border-[#1d2942] rounded-2xl p-4 outline-none focus:border-blue-500 text-white"
+              className="flex-1 bg-[#0b1220] border border-[#1d2942] rounded-xl p-3 outline-none focus:border-blue-500 text-white text-sm min-w-0"
             />
             
             <MicrophoneButton 
@@ -366,7 +440,7 @@ export default function Meeting() {
             <button
               onClick={sendMessage}
               disabled={sending}
-              className={`px-6 rounded-2xl font-semibold transition ${
+              className={`px-4 rounded-xl font-semibold transition whitespace-nowrap text-sm ${
                 sending ? "bg-gray-600" : "bg-blue-500 hover:bg-blue-600"
               }`}
             >
@@ -376,53 +450,63 @@ export default function Meeting() {
         </div>
 
         {/* RIGHT SIDE - TASKS */}
-        <div className="bg-[#111827] border border-[#1f2937] rounded-3xl p-5 flex flex-col shadow-2xl">
-          <div className="flex items-center justify-between mb-5">
+        <div className="bg-[#111827] border border-[#1f2937] rounded-3xl p-4 flex flex-col shadow-2xl min-h-0">
+          <div className="flex items-center justify-between mb-4 flex-shrink-0">
             <div>
-              <h2 className="text-2xl font-bold">⚡ AI Action Items</h2>
-              <p className="text-gray-400 text-sm mt-1">Auto-generated tasks by AI</p>
+              <h2 className="text-xl font-bold">⚡ AI Action Items</h2>
+              <p className="text-gray-400 text-xs mt-0.5">Auto-generated tasks by AI</p>
             </div>
-            <div className="bg-blue-500/10 text-blue-400 px-4 py-2 rounded-full text-sm">
+            <div className="bg-blue-500/10 text-blue-400 px-3 py-1.5 rounded-full text-xs flex-shrink-0">
               {tasks.length} Tasks
             </div>
           </div>
 
-          <div className="space-y-4 overflow-y-auto pr-2">
+          {/* Tasks Container */}
+          <div className="flex-1 overflow-y-auto space-y-3 pr-1 min-h-0">
             {tasks.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-gray-500">
-                <div className="text-6xl mb-4">🤖</div>
-                <p>AI is waiting for action items...</p>
-                <p className="text-sm mt-2">Try saying: "Kali complete the file process by tomorrow"</p>
-                <p className="text-xs text-blue-400 mt-1">💡 Tip: Click "Record Meeting" and speak naturally!</p>
+                <div className="text-5xl mb-3">🤖</div>
+                <p className="text-sm">AI is waiting for action items...</p>
+                <p className="text-xs mt-1">Try saying: "Kali complete the file process by tomorrow"</p>
+                <p className="text-xs text-blue-400 mt-1">💡 Tip: Click "Record" and speak naturally!</p>
+                <button
+                  onClick={() => {
+                    // Test task creation
+                    setText("Kali complete the file process by tomorrow");
+                  }}
+                  className="mt-3 text-xs bg-blue-500/20 hover:bg-blue-500/30 px-3 py-1 rounded-lg transition"
+                >
+                  📝 Try Test Message
+                </button>
               </div>
             ) : (
               tasks.map((task, i) => (
                 <div
                   key={task._id || i}
-                  className={`rounded-2xl p-5 border transition-all duration-200 ${
+                  className={`rounded-xl p-4 border transition-all duration-200 flex-shrink-0 ${
                     task?.status === "Completed"
                       ? "border-green-500 bg-green-500/10"
                       : "border-[#1d2942] bg-[#0b1220] hover:border-blue-500/50"
                   }`}
                 >
                   {/* Task Title */}
-                  <h3 className="text-lg font-semibold text-white">{task?.task || "Untitled Task"}</h3>
+                  <h3 className="text-base font-semibold text-white">{task?.task || "Untitled Task"}</h3>
                   
                   {/* Assigned To */}
-                  <p className="text-gray-400 mt-3 flex items-center gap-2">
+                  <p className="text-gray-400 mt-2 flex items-center gap-1 text-sm">
                     <span>👤</span> {task?.assignedTo || "Unassigned"}
                   </p>
                   
                   {/* Due Date */}
-                  <p className="text-gray-400 mt-1 flex items-center gap-2">
+                  <p className="text-gray-400 mt-0.5 flex items-center gap-1 text-sm">
                     <span>📅</span> {task?.dueDate || "No deadline"}
                   </p>
                   
                   {/* Status Badge and Buttons */}
-                  <div className="flex items-center justify-between mt-5 flex-wrap gap-3">
+                  <div className="flex items-center justify-between mt-3 flex-wrap gap-2">
                     {/* Status Badge */}
                     <span
-                      className={`text-sm px-4 py-2 rounded-full ${
+                      className={`text-xs px-3 py-1 rounded-full ${
                         task?.status === "Completed"
                           ? "bg-green-500/20 text-green-400 border border-green-500/30"
                           : "bg-yellow-500/20 text-yellow-300 border border-yellow-500/30"
@@ -432,28 +516,25 @@ export default function Meeting() {
                     </span>
                     
                     {/* Action Buttons */}
-                    <div className="flex gap-2 flex-wrap">
-                      {/* Complete/Undo Button */}
+                    <div className="flex gap-1.5 flex-wrap">
                       <button
                         onClick={() => completeTask(task._id)}
-                        className={`px-4 py-2 rounded-xl text-sm font-semibold transition ${
+                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition ${
                           task?.status === "Completed"
                             ? "bg-orange-500 hover:bg-orange-600 text-white"
                             : "bg-green-500 hover:bg-green-600 text-white"
                         }`}
                       >
-                        {task?.status === "Completed" ? "↩️ Undo" : "✅ Mark Complete"}
+                        {task?.status === "Completed" ? "↩️ Undo" : "✅ Complete"}
                       </button>
                       
-                      {/* Delete Button */}
                       <button
                         onClick={() => deleteTask(task._id)}
-                        className="bg-red-500 hover:bg-red-600 px-4 py-2 rounded-xl text-sm font-semibold transition text-white flex items-center gap-1"
+                        className="bg-red-500 hover:bg-red-600 px-2.5 py-1 rounded-lg text-xs font-semibold transition text-white"
                       >
-                        🗑️ Delete
+                        🗑️
                       </button>
                       
-                      {/* Calendar Sync Button */}
                       <CalendarSync 
                         taskId={task._id} 
                         taskName={task.task} 
@@ -462,9 +543,8 @@ export default function Meeting() {
                     </div>
                   </div>
                   
-                  {/* Completed Date */}
                   {task?.completedAt && (
-                    <p className="text-xs text-green-400 mt-4 pt-2 border-t border-green-500/20">
+                    <p className="text-xs text-green-400 mt-2 pt-2 border-t border-green-500/20">
                       ✅ Completed on {new Date(task.completedAt).toLocaleString()}
                     </p>
                   )}

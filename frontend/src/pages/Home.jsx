@@ -13,12 +13,9 @@ export default function Home() {
   const [selectedMeeting, setSelectedMeeting] = useState(null);
   const [userRole, setUserRole] = useState(null);
   const [userName, setUserName] = useState("");
-
-  // LOAD MEETINGS
-  useEffect(() => {
-    fetchMeetings();
-    getUserInfo();
-  }, []);
+  const [loading, setLoading] = useState(true);
+  const [pendingTasksCount, setPendingTasksCount] = useState(0);
+  const [overdueTasksCount, setOverdueTasksCount] = useState(0);
 
   // GET USER INFO FROM LOCALSTORAGE
   const getUserInfo = () => {
@@ -31,21 +28,65 @@ export default function Home() {
     }
   };
 
-  // FETCH ALL MEETINGS
+  // FETCH ALL MEETINGS for current user
   const fetchMeetings = async () => {
+    setLoading(true);
     try {
       const token = localStorage.getItem('token');
+      if (!token) {
+        navigate('/login');
+        return;
+      }
+      
       const res = await axios.get("http://localhost:5001/api/meetings", {
         headers: { Authorization: token }
       });
+      
+      console.log("Meetings fetched:", res.data.length);
       setMeetings(res.data);
+      
+      // Calculate pending and overdue tasks
+      let pending = 0;
+      let overdue = 0;
+      const today = new Date().toISOString().split('T')[0];
+      
+      res.data.forEach(meeting => {
+        if (meeting.actionItems) {
+          meeting.actionItems.forEach(item => {
+            if (item.status !== 'Completed') {
+              pending++;
+              if (item.dueDate && item.dueDate !== 'No deadline' && item.dueDate < today) {
+                overdue++;
+              }
+            }
+          });
+        }
+      });
+      
+      setPendingTasksCount(pending);
+      setOverdueTasksCount(overdue);
+      
       if (res.data.length > 0 && !selectedMeeting) {
         setSelectedMeeting(res.data[0]._id);
       }
     } catch (err) {
-      console.log(err);
+      console.error("Error fetching meetings:", err);
+      if (err.response?.status === 401) {
+        navigate('/login');
+      }
+    } finally {
+      setLoading(false);
     }
   };
+
+  useEffect(() => {
+    getUserInfo();
+    fetchMeetings();
+    
+    // Refresh data every 30 seconds
+    const interval = setInterval(fetchMeetings, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   // CREATE NEW MEETING
   const createMeeting = async () => {
@@ -58,10 +99,35 @@ export default function Home() {
       });
       navigate(`/meeting/${res.data._id}`);
     } catch (err) {
-      console.log(err);
+      console.error("Create meeting error:", err);
       alert("Meeting creation failed");
     }
   };
+
+  // Format date safely
+  const formatDate = (dateString) => {
+    if (!dateString) return 'Invalid Date';
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return 'Invalid Date';
+      return date.toLocaleString();
+    } catch (e) {
+      return 'Invalid Date';
+    }
+  };
+
+  if (loading) {
+    return (
+      <Layout>
+        <div className="h-[80vh] flex items-center justify-center">
+          <div className="text-center">
+            <div className="w-14 h-14 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+            <p className="mt-5 text-xl font-semibold">Loading Dashboard...</p>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
 
   return (
     <Layout>
@@ -74,12 +140,22 @@ export default function Home() {
           <p className="text-gray-400 mt-2">
             Real-time meeting intelligence, analytics & collaboration.
           </p>
-          <div className="mt-2 flex items-center gap-2">
+          <div className="mt-2 flex items-center gap-3 flex-wrap">
             <span className="text-sm text-gray-500">Welcome,</span>
             <span className="text-sm font-semibold text-white">{userName}</span>
             {userRole === 'admin' && (
               <span className="text-xs bg-red-500/20 text-red-400 px-2 py-1 rounded-full">
                 👑 Admin Access
+              </span>
+            )}
+            {pendingTasksCount > 0 && (
+              <span className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-1 rounded-full">
+                ⏳ {pendingTasksCount} Pending
+              </span>
+            )}
+            {overdueTasksCount > 0 && (
+              <span className="text-xs bg-red-500/20 text-red-400 px-2 py-1 rounded-full animate-pulse">
+                🔴 {overdueTasksCount} Overdue
               </span>
             )}
           </div>
@@ -142,7 +218,7 @@ export default function Home() {
       {activeTab === "meetings" && (
         <>
           {/* STATS CARDS */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-5 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-5 mb-8">
             <div className="bg-gradient-to-br from-blue-500/20 to-blue-600/20 border border-blue-500/30 rounded-2xl p-5">
               <p className="text-gray-300 text-sm">Total Meetings</p>
               <h2 className="text-3xl font-bold mt-2">{meetings.length}</h2>
@@ -160,15 +236,19 @@ export default function Home() {
               </h2>
             </div>
             <div className="bg-gradient-to-br from-yellow-500/20 to-yellow-600/20 border border-yellow-500/30 rounded-2xl p-5">
-              <p className="text-gray-300 text-sm">AI Status</p>
-              <h2 className="text-xl font-bold mt-2 text-green-400">● Active</h2>
+              <p className="text-gray-300 text-sm">Pending Tasks</p>
+              <h2 className="text-3xl font-bold mt-2 text-yellow-400">{pendingTasksCount}</h2>
+            </div>
+            <div className="bg-gradient-to-br from-red-500/20 to-red-600/20 border border-red-500/30 rounded-2xl p-5">
+              <p className="text-gray-300 text-sm">Overdue Tasks</p>
+              <h2 className="text-3xl font-bold mt-2 text-red-400">{overdueTasksCount}</h2>
             </div>
           </div>
 
           {/* MEETING LIST */}
           <div className="bg-[#111827] border border-[#1f2937] rounded-2xl p-6">
             <h2 className="text-2xl font-bold mb-4">Meeting History</h2>
-            <div className="space-y-3">
+            <div className="space-y-3 max-h-96 overflow-y-auto">
               {meetings.length === 0 ? (
                 <div className="text-center py-12 text-gray-500">
                   <p className="text-4xl mb-2">📭</p>
@@ -184,10 +264,10 @@ export default function Home() {
                     <div className="flex justify-between items-center">
                       <div>
                         <h3 className="text-lg font-semibold group-hover:text-blue-400 transition">
-                          {meeting.title}
+                          {meeting.title || "Untitled Meeting"}
                         </h3>
                         <p className="text-gray-500 text-sm mt-1">
-                          {meeting.createdAt ? new Date(meeting.createdAt).toLocaleString() : 'Invalid Date'} • 
+                          {formatDate(meeting.createdAt)} • 
                           {meeting.transcript?.length || 0} messages • 
                           {meeting.actionItems?.length || 0} tasks
                         </p>
@@ -220,7 +300,7 @@ export default function Home() {
               >
                 {meetings.map(meeting => (
                   <option key={meeting._id} value={meeting._id}>
-                    {meeting.title}
+                    {meeting.title || "Untitled"}
                   </option>
                 ))}
               </select>

@@ -10,12 +10,15 @@ yarn.lock
 .env
 .env.local
 .env.production
+.env.test
 
 # Build files
 dist/
 build/
 .next/
 out/
+client/dist/
+server/dist/
 
 # IDE files
 .vscode/
@@ -24,6 +27,7 @@ out/
 *.swo
 *~
 .DS_Store
+Thumbs.db
 
 # Logs
 logs/
@@ -37,11 +41,23 @@ logs/
 uploads/
 recordings/
 temp/
+client/public/recordings/
 
 # OS files
-Thumbs.db
 .DS_Store
+Thumbs.db
 
 # Misc
 *.pem
 *.cert
+*.key
+
+# Coverage
+coverage/
+.nyc_output/
+
+# Debug
+debug/
+*.pid
+*.seed
+*.pid.lock

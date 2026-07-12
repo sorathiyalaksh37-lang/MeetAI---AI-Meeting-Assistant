@@ -37,7 +37,6 @@ export default function Meeting() {
         return;
       }
       
-      // Fetch meeting data
       const res = await axios.get(
         `http://localhost:5001/api/meetings/${id}`,
         { headers: { Authorization: token } }
@@ -52,7 +51,6 @@ export default function Meeting() {
         risks: res.data.risks || []
       });
       
-      // Fetch tasks separately with better error handling
       try {
         const tasksRes = await axios.get(
           `http://localhost:5001/api/tasks/meeting/${id}`,
@@ -67,7 +65,6 @@ export default function Meeting() {
         }
       } catch (taskErr) {
         console.error("Error fetching tasks:", taskErr);
-        // Don't fail the whole page if tasks fail
         setTasks([]);
       }
       
@@ -292,8 +289,8 @@ export default function Meeting() {
       <Layout>
         <div className="h-[80vh] flex items-center justify-center">
           <div className="text-center">
-            <div className="w-14 h-14 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
-            <p className="mt-5 text-xl font-semibold">Loading Meeting...</p>
+            <div className="w-14 h-14 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+            <p className="mt-5 text-lg font-medium text-gray-400">Loading Meeting...</p>
           </div>
         </div>
       </Layout>
@@ -313,7 +310,7 @@ export default function Meeting() {
             <p className="text-gray-400">{fetchError}</p>
             <button
               onClick={() => window.location.href = '/'}
-              className="mt-4 bg-blue-500 hover:bg-blue-600 px-6 py-2 rounded-xl transition"
+              className="mt-4 bg-indigo-500 hover:bg-indigo-600 px-6 py-2 rounded-xl transition"
             >
               Go to Dashboard
             </button>
@@ -325,12 +322,20 @@ export default function Meeting() {
 
   return (
     <Layout>
-      {/* TOP HEADER */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
+      {/* TOP HEADER - Professional */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
         <div>
-          <h1 className="text-3xl lg:text-4xl font-bold text-white">🧠 AI Meeting Assistant</h1>
-          <p className="text-gray-400 mt-1 text-sm">Smart real-time collaboration with voice AI</p>
-          <p className="text-gray-500 text-xs mt-1 break-all">Meeting ID: {id}</p>
+          <h1 className="text-2xl md:text-3xl font-bold gradient-text">🧠 AI Meeting Assistant</h1>
+          <p className="text-sm text-gray-400 mt-1">Smart real-time collaboration with voice AI</p>
+          <div className="flex items-center gap-3 mt-2">
+            <span className="text-xs text-gray-500 font-mono bg-[#0a0e1a] px-3 py-1 rounded-lg border border-[#1a2340]">
+              📋 Meeting ID: {id}
+            </span>
+            <span className="text-xs flex items-center gap-1 text-green-400">
+              <span className="w-1.5 h-1.5 bg-green-400 rounded-full pulse-dot"></span>
+              Live
+            </span>
+          </div>
         </div>
         
         {/* Header Buttons */}
@@ -339,13 +344,13 @@ export default function Meeting() {
             meetingId={id} 
             onRecordingComplete={() => {
               console.log("Recording saved");
-              fetchMeeting(); // Refresh tasks after recording
+              fetchMeeting();
             }}
             socket={socket}
           />
           <button
             onClick={debugTasks}
-            className="bg-yellow-600 hover:bg-yellow-700 transition px-3 py-2 rounded-2xl font-semibold text-xs whitespace-nowrap"
+            className="px-3 py-2 rounded-xl bg-yellow-500/10 text-yellow-400 hover:bg-yellow-500/20 transition text-xs font-medium border border-yellow-500/20"
           >
             🔍 Debug
           </button>
@@ -353,34 +358,43 @@ export default function Meeting() {
             href={`http://localhost:5001/api/report/${id}`}
             target="_blank"
             rel="noreferrer"
-            className="bg-purple-600 hover:bg-purple-700 transition px-3 py-2 rounded-2xl font-semibold text-xs whitespace-nowrap"
+            className="px-3 py-2 rounded-xl bg-purple-500/10 text-purple-400 hover:bg-purple-500/20 transition text-xs font-medium border border-purple-500/20"
           >
-            📄 PDF
+            📄 Export PDF
           </a>
         </div>
       </div>
 
       {/* SEARCH BAR */}
-      <MeetingSearch meetingId={id} onJumpToMessage={jumpToMessage} />
+      <div className="mb-6">
+        <MeetingSearch meetingId={id} onJumpToMessage={jumpToMessage} />
+      </div>
 
       {/* AI SUMMARY SECTION */}
-      <MeetingSummary 
-        meetingId={id} 
-        initialSummary={summary}
-      />
+      <div className="mb-6">
+        <MeetingSummary 
+          meetingId={id} 
+          initialSummary={summary}
+        />
+      </div>
 
-      {/* MAIN GRID */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6" style={{ height: 'calc(100vh - 380px)' }}>
+      {/* MAIN GRID - Professional Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6" style={{ height: 'calc(100vh - 480px)', minHeight: '500px' }}>
+        
         {/* LEFT SIDE - TRANSCRIPT */}
-        <div className="bg-[#111827] border border-[#1f2937] rounded-3xl p-4 flex flex-col shadow-2xl min-h-0">
+        <div className="glass-card p-5 flex flex-col min-h-0">
           <div className="flex items-center justify-between mb-4 flex-shrink-0">
             <div>
-              <h2 className="text-xl font-bold">🎤 Live Transcript</h2>
-              <p className="text-gray-400 text-xs mt-0.5">Real-time meeting discussion</p>
+              <h2 className="text-lg font-bold flex items-center gap-2">
+                <span>🎤</span> Live Transcript
+                <span className="text-xs font-normal text-gray-500 bg-[#0a0e1a] px-2 py-0.5 rounded-full">Real-time</span>
+              </h2>
+              <p className="text-xs text-gray-500 mt-0.5">Messages appear instantly as they're spoken</p>
             </div>
-            <div className="flex items-center gap-2 bg-green-500/10 px-3 py-1.5 rounded-full flex-shrink-0">
-              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-              <span className="text-green-400 text-xs">Live</span>
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-500/10 border border-green-500/20">
+              <div className="w-1.5 h-1.5 bg-green-400 rounded-full pulse-dot"></div>
+              <span className="text-xs text-green-400 font-medium">Live</span>
+              <span className="text-xs text-green-400/60">{transcript.length} messages</span>
             </div>
           </div>
 
@@ -392,25 +406,36 @@ export default function Meeting() {
           >
             {transcript.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-gray-500">
-                <div className="text-5xl mb-3">🎙️</div>
-                <p className="text-sm">Start meeting conversation...</p>
-                <p className="text-xs mt-1">Try voice input or type a message</p>
+                <div className="w-20 h-20 rounded-full bg-[#0a0e1a] border-2 border-dashed border-[#1a2340] flex items-center justify-center text-4xl mb-4">
+                  🎙️
+                </div>
+                <p className="text-sm font-medium text-gray-400">Start the conversation</p>
+                <p className="text-xs text-gray-500 mt-1">Speak or type to begin your meeting</p>
+                <div className="flex gap-2 mt-4">
+                  <span className="text-xs bg-indigo-500/10 text-indigo-400 px-3 py-1 rounded-full">💡 Voice input available</span>
+                  <span className="text-xs bg-purple-500/10 text-purple-400 px-3 py-1 rounded-full">🎯 AI extracts tasks</span>
+                </div>
               </div>
             ) : (
               <>
                 {transcript.map((t, i) => (
                   <div 
                     key={i} 
-                    id={`transcript-message-${i}`}
-                    className="bg-[#0b1220] border border-[#1d2942] p-3 rounded-xl transition-all duration-300 hover:border-blue-500/50 flex-shrink-0"
+                    id={`transcript-message-${i}`} 
+                    className="p-3 rounded-xl bg-[#0a0e1a] border border-[#1a2340] hover:border-indigo-500/30 transition-all group"
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-blue-400 font-semibold text-sm">{t.sender}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="w-6 h-6 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-[10px] font-bold text-white">
+                          {t.sender?.charAt(0) || 'U'}
+                        </span>
+                        <span className="text-indigo-400 font-medium text-sm">{t.sender}</span>
+                      </div>
                       <span className="text-xs text-gray-500">
                         {t.time ? new Date(t.time).toLocaleTimeString() : 'Just now'}
                       </span>
                     </div>
-                    <p className="mt-2 text-gray-200 leading-relaxed text-sm">{t.text}</p>
+                    <p className="mt-2 text-gray-200 leading-relaxed text-sm pl-8">{t.text}</p>
                   </div>
                 ))}
                 <div ref={transcriptEndRef} />
@@ -420,17 +445,24 @@ export default function Meeting() {
 
           {/* INPUT SECTION */}
           <div className="flex gap-2 mt-4 flex-shrink-0">
-            <input
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  sendMessage();
-                }
-              }}
-              placeholder="Type meeting discussion or use voice input..."
-              className="flex-1 bg-[#0b1220] border border-[#1d2942] rounded-xl p-3 outline-none focus:border-blue-500 text-white text-sm min-w-0"
-            />
+            <div className="flex-1 relative">
+              <input
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    sendMessage();
+                  }
+                }}
+                placeholder="Type your message or use voice input..."
+                className="w-full px-4 py-3 pr-10 rounded-xl bg-[#0a0e1a] border border-[#1a2340] text-white placeholder-gray-500 focus:border-indigo-500 outline-none transition text-sm"
+              />
+              {text && (
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-500">
+                  {text.length}
+                </span>
+              )}
+            </div>
             
             <MicrophoneButton 
               onTranscriptReady={handleVoiceInput}
@@ -440,24 +472,36 @@ export default function Meeting() {
             <button
               onClick={sendMessage}
               disabled={sending}
-              className={`px-4 rounded-xl font-semibold transition whitespace-nowrap text-sm ${
-                sending ? "bg-gray-600" : "bg-blue-500 hover:bg-blue-600"
+              className={`px-6 rounded-xl font-medium transition text-sm ${
+                sending ? "bg-gray-700 cursor-not-allowed" : "btn-primary text-white"
               }`}
             >
-              {sending ? "Sending..." : "Send"}
+              {sending ? (
+                <span className="flex items-center gap-2">
+                  <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                  Sending
+                </span>
+              ) : (
+                "Send →"
+              )}
             </button>
           </div>
         </div>
 
         {/* RIGHT SIDE - TASKS */}
-        <div className="bg-[#111827] border border-[#1f2937] rounded-3xl p-4 flex flex-col shadow-2xl min-h-0">
+        <div className="glass-card p-5 flex flex-col min-h-0">
           <div className="flex items-center justify-between mb-4 flex-shrink-0">
             <div>
-              <h2 className="text-xl font-bold">⚡ AI Action Items</h2>
-              <p className="text-gray-400 text-xs mt-0.5">Auto-generated tasks by AI</p>
+              <h2 className="text-lg font-bold flex items-center gap-2">
+                <span>⚡</span> AI Action Items
+                <span className="text-xs font-normal text-gray-500 bg-[#0a0e1a] px-2 py-0.5 rounded-full">Auto-extracted</span>
+              </h2>
+              <p className="text-xs text-gray-500 mt-0.5">Tasks detected from meeting conversation</p>
             </div>
-            <div className="bg-blue-500/10 text-blue-400 px-3 py-1.5 rounded-full text-xs flex-shrink-0">
-              {tasks.length} Tasks
+            <div className="flex items-center gap-2">
+              <span className="px-3 py-1.5 rounded-full text-xs font-medium bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                {tasks.length} {tasks.length === 1 ? 'Task' : 'Tasks'}
+              </span>
             </div>
           </div>
 
@@ -465,84 +509,87 @@ export default function Meeting() {
           <div className="flex-1 overflow-y-auto space-y-3 pr-1 min-h-0">
             {tasks.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-gray-500">
-                <div className="text-5xl mb-3">🤖</div>
-                <p className="text-sm">AI is waiting for action items...</p>
-                <p className="text-xs mt-1">Try saying: "Kali complete the file process by tomorrow"</p>
-                <p className="text-xs text-blue-400 mt-1">💡 Tip: Click "Record" and speak naturally!</p>
-                <button
-                  onClick={() => {
-                    // Test task creation
-                    setText("Kali complete the file process by tomorrow");
-                  }}
-                  className="mt-3 text-xs bg-blue-500/20 hover:bg-blue-500/30 px-3 py-1 rounded-lg transition"
-                >
-                  📝 Try Test Message
-                </button>
+                <div className="w-20 h-20 rounded-full bg-[#0a0e1a] border-2 border-dashed border-[#1a2340] flex items-center justify-center text-4xl mb-4">
+                  🤖
+                </div>
+                <p className="text-sm font-medium text-gray-400">Waiting for action items</p>
+                <p className="text-xs text-gray-500 mt-1 text-center max-w-xs">
+                  AI will automatically detect tasks when you speak
+                </p>
+                <div className="flex flex-col items-center gap-2 mt-4">
+                  <div className="text-xs bg-indigo-500/10 text-indigo-400 px-3 py-1 rounded-full">
+                    💡 Try: "Kali complete the file by tomorrow"
+                  </div>
+                  <button
+                    onClick={() => {
+                      setText("Kali complete the file process by tomorrow");
+                    }}
+                    className="text-xs bg-indigo-500/20 hover:bg-indigo-500/30 px-4 py-1.5 rounded-lg transition text-indigo-400 border border-indigo-500/20"
+                  >
+                    📝 Quick Test Message
+                  </button>
+                </div>
               </div>
             ) : (
-              tasks.map((task, i) => (
+              tasks.map((task) => (
                 <div
-                  key={task._id || i}
-                  className={`rounded-xl p-4 border transition-all duration-200 flex-shrink-0 ${
+                  key={task._id}
+                  className={`p-4 rounded-xl border transition-all ${
                     task?.status === "Completed"
-                      ? "border-green-500 bg-green-500/10"
-                      : "border-[#1d2942] bg-[#0b1220] hover:border-blue-500/50"
+                      ? "border-green-500/30 bg-green-500/5 hover:border-green-500/50"
+                      : "border-[#1a2340] bg-[#0a0e1a] hover:border-indigo-500/30"
                   }`}
                 >
-                  {/* Task Title */}
-                  <h3 className="text-base font-semibold text-white">{task?.task || "Untitled Task"}</h3>
-                  
-                  {/* Assigned To */}
-                  <p className="text-gray-400 mt-2 flex items-center gap-1 text-sm">
-                    <span>👤</span> {task?.assignedTo || "Unassigned"}
-                  </p>
-                  
-                  {/* Due Date */}
-                  <p className="text-gray-400 mt-0.5 flex items-center gap-1 text-sm">
-                    <span>📅</span> {task?.dueDate || "No deadline"}
-                  </p>
-                  
-                  {/* Status Badge and Buttons */}
-                  <div className="flex items-center justify-between mt-3 flex-wrap gap-2">
-                    {/* Status Badge */}
-                    <span
-                      className={`text-xs px-3 py-1 rounded-full ${
-                        task?.status === "Completed"
-                          ? "bg-green-500/20 text-green-400 border border-green-500/30"
-                          : "bg-yellow-500/20 text-yellow-300 border border-yellow-500/30"
-                      }`}
-                    >
-                      {task?.status === "Completed" ? "✅ Completed" : "⏳ Pending"}
+                  {/* Task Header */}
+                  <div className="flex items-start justify-between">
+                    <h3 className="font-semibold text-white text-sm flex-1">
+                      {task?.task || "Untitled Task"}
+                    </h3>
+                    <span className={`badge ml-2 flex-shrink-0 ${
+                      task?.status === "Completed" ? "badge-success" : "badge-warning"
+                    }`}>
+                      {task?.status === "Completed" ? "✅ Done" : "⏳ Pending"}
                     </span>
-                    
-                    {/* Action Buttons */}
-                    <div className="flex gap-1.5 flex-wrap">
-                      <button
-                        onClick={() => completeTask(task._id)}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition ${
-                          task?.status === "Completed"
-                            ? "bg-orange-500 hover:bg-orange-600 text-white"
-                            : "bg-green-500 hover:bg-green-600 text-white"
-                        }`}
-                      >
-                        {task?.status === "Completed" ? "↩️ Undo" : "✅ Complete"}
-                      </button>
-                      
-                      <button
-                        onClick={() => deleteTask(task._id)}
-                        className="bg-red-500 hover:bg-red-600 px-2.5 py-1 rounded-lg text-xs font-semibold transition text-white"
-                      >
-                        🗑️
-                      </button>
-                      
-                      <CalendarSync 
-                        taskId={task._id} 
-                        taskName={task.task} 
-                        dueDate={task.dueDate} 
-                      />
-                    </div>
                   </div>
                   
+                  {/* Task Details */}
+                  <div className="flex flex-wrap items-center gap-4 mt-2 text-sm text-gray-400">
+                    <span className="flex items-center gap-1">
+                      <span>👤</span> {task?.assignedTo || "Unassigned"}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span>📅</span> {task?.dueDate || "No deadline"}
+                    </span>
+                  </div>
+                  
+                  {/* Action Buttons */}
+                  <div className="flex flex-wrap items-center justify-end gap-1.5 mt-3 pt-3 border-t border-[#1a2340]">
+                    <button
+                      onClick={() => completeTask(task._id)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+                        task?.status === "Completed"
+                          ? "bg-orange-500/20 text-orange-400 hover:bg-orange-500/30 border border-orange-500/20"
+                          : "bg-green-500/20 text-green-400 hover:bg-green-500/30 border border-green-500/20"
+                      }`}
+                    >
+                      {task?.status === "Completed" ? "↩️ Undo" : "✅ Mark Complete"}
+                    </button>
+                    
+                    <button
+                      onClick={() => deleteTask(task._id)}
+                      className="px-3 py-1.5 rounded-lg text-xs font-medium bg-red-500/20 text-red-400 hover:bg-red-500/30 transition border border-red-500/20"
+                    >
+                      🗑️ Delete
+                    </button>
+                    
+                    <CalendarSync 
+                      taskId={task._id} 
+                      taskName={task.task} 
+                      dueDate={task.dueDate} 
+                    />
+                  </div>
+                  
+                  {/* Completed Date */}
                   {task?.completedAt && (
                     <p className="text-xs text-green-400 mt-2 pt-2 border-t border-green-500/20">
                       ✅ Completed on {new Date(task.completedAt).toLocaleString()}

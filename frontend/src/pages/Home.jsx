@@ -14,21 +14,24 @@ export default function Home() {
   const [userRole, setUserRole] = useState(null);
   const [userName, setUserName] = useState("");
   const [loading, setLoading] = useState(true);
-  const [pendingTasksCount, setPendingTasksCount] = useState(0);
-  const [overdueTasksCount, setOverdueTasksCount] = useState(0);
+  const [stats, setStats] = useState({ 
+    total: 0, 
+    active: 0, 
+    transcripts: 0, 
+    tasks: 0,
+    completedTasks: 0,
+    pendingTasks: 0
+  });
 
-  // GET USER INFO FROM LOCALSTORAGE
   const getUserInfo = () => {
     const userData = localStorage.getItem("user");
     if (userData) {
       const user = JSON.parse(userData);
       setUserRole(user.role);
       setUserName(user.name || user.email);
-      console.log("User role from localStorage:", user.role);
     }
   };
 
-  // FETCH ALL MEETINGS for current user
   const fetchMeetings = async () => {
     setLoading(true);
     try {
@@ -42,29 +45,39 @@ export default function Home() {
         headers: { Authorization: token }
       });
       
-      console.log("Meetings fetched:", res.data.length);
       setMeetings(res.data);
       
-      // Calculate pending and overdue tasks
-      let pending = 0;
-      let overdue = 0;
-      const today = new Date().toISOString().split('T')[0];
+      // Calculate stats
+      const total = res.data.length;
+      const active = res.data.filter(m => m.status === "active").length;
+      const transcripts = res.data.reduce((sum, m) => sum + (m.transcript?.length || 0), 0);
+      
+      // Calculate tasks from all meetings
+      let totalTasks = 0;
+      let completedTasks = 0;
+      let pendingTasks = 0;
       
       res.data.forEach(meeting => {
         if (meeting.actionItems) {
           meeting.actionItems.forEach(item => {
-            if (item.status !== 'Completed') {
-              pending++;
-              if (item.dueDate && item.dueDate !== 'No deadline' && item.dueDate < today) {
-                overdue++;
-              }
+            totalTasks++;
+            if (item.status === 'Completed' || item.completed) {
+              completedTasks++;
+            } else {
+              pendingTasks++;
             }
           });
         }
       });
       
-      setPendingTasksCount(pending);
-      setOverdueTasksCount(overdue);
+      setStats({ 
+        total, 
+        active, 
+        transcripts, 
+        tasks: totalTasks,
+        completedTasks,
+        pendingTasks
+      });
       
       if (res.data.length > 0 && !selectedMeeting) {
         setSelectedMeeting(res.data[0]._id);
@@ -88,7 +101,6 @@ export default function Home() {
     return () => clearInterval(interval);
   }, []);
 
-  // CREATE NEW MEETING
   const createMeeting = async () => {
     try {
       const token = localStorage.getItem('token');
@@ -104,7 +116,6 @@ export default function Home() {
     }
   };
 
-  // Format date safely
   const formatDate = (dateString) => {
     if (!dateString) return 'Invalid Date';
     try {
@@ -121,8 +132,8 @@ export default function Home() {
       <Layout>
         <div className="h-[80vh] flex items-center justify-center">
           <div className="text-center">
-            <div className="w-14 h-14 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
-            <p className="mt-5 text-xl font-semibold">Loading Dashboard...</p>
+            <div className="spinner mx-auto"></div>
+            <p className="mt-5 text-lg font-medium text-gray-400">Loading Dashboard...</p>
           </div>
         </div>
       </Layout>
@@ -131,172 +142,143 @@ export default function Home() {
 
   return (
     <Layout>
-      {/* HEADER */}
-      <div className="flex justify-between items-center mb-8">
+      {/* Welcome Section */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
         <div>
-          <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-500 to-purple-500 bg-clip-text text-transparent">
-            AI Meeting Dashboard
+          <h1 className="text-3xl md:text-4xl font-bold gradient-text">
+            Welcome back, {userName} 👋
           </h1>
-          <p className="text-gray-400 mt-2">
-            Real-time meeting intelligence, analytics & collaboration.
+          <p className="text-gray-400 mt-1">
+            Here's what's happening with your meetings today
           </p>
-          <div className="mt-2 flex items-center gap-3 flex-wrap">
-            <span className="text-sm text-gray-500">Welcome,</span>
-            <span className="text-sm font-semibold text-white">{userName}</span>
-            {userRole === 'admin' && (
-              <span className="text-xs bg-red-500/20 text-red-400 px-2 py-1 rounded-full">
-                👑 Admin Access
-              </span>
-            )}
-            {pendingTasksCount > 0 && (
-              <span className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-1 rounded-full">
-                ⏳ {pendingTasksCount} Pending
-              </span>
-            )}
-            {overdueTasksCount > 0 && (
-              <span className="text-xs bg-red-500/20 text-red-400 px-2 py-1 rounded-full animate-pulse">
-                🔴 {overdueTasksCount} Overdue
-              </span>
-            )}
-          </div>
         </div>
         <button
           onClick={createMeeting}
-          className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 transition px-6 py-3 rounded-2xl font-semibold"
+          className="btn-primary px-6 py-3 rounded-2xl font-semibold text-white flex items-center gap-2 shadow-lg shadow-indigo-500/25"
         >
-          + New Meeting
+          <span className="text-xl">+</span>
+          New Meeting
         </button>
       </div>
 
-      {/* TABS */}
-      <div className="flex gap-2 mb-6 border-b border-[#1d2942] overflow-x-auto">
-        <button
-          onClick={() => setActiveTab("meetings")}
-          className={`px-6 py-3 rounded-t-xl font-semibold transition whitespace-nowrap ${
-            activeTab === "meetings"
-              ? "bg-[#111827] text-blue-400 border-b-2 border-blue-400"
-              : "text-gray-400 hover:text-white"
-          }`}
-        >
-          📅 Meetings
-        </button>
-        <button
-          onClick={() => setActiveTab("analytics")}
-          className={`px-6 py-3 rounded-t-xl font-semibold transition whitespace-nowrap ${
-            activeTab === "analytics"
-              ? "bg-[#111827] text-blue-400 border-b-2 border-blue-400"
-              : "text-gray-400 hover:text-white"
-          }`}
-        >
-          📊 Analytics
-        </button>
-        <button
-          onClick={() => setActiveTab("team")}
-          className={`px-6 py-3 rounded-t-xl font-semibold transition whitespace-nowrap ${
-            activeTab === "team"
-              ? "bg-[#111827] text-blue-400 border-b-2 border-blue-400"
-              : "text-gray-400 hover:text-white"
-          }`}
-        >
-          👥 Team Dashboard
-        </button>
-        {userRole === 'admin' && (
+      {/* Stats Grid */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <div className="stat-card">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-gray-400">Total Meetings</p>
+            <span className="text-2xl">📅</span>
+          </div>
+          <p className="text-3xl font-bold mt-2">{stats.total}</p>
+          <p className="text-xs text-gray-500 mt-1">{stats.active} active</p>
+        </div>
+        <div className="stat-card">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-gray-400">Transcripts</p>
+            <span className="text-2xl">📝</span>
+          </div>
+          <p className="text-3xl font-bold mt-2">{stats.transcripts}</p>
+          <p className="text-xs text-gray-500 mt-1">Messages captured</p>
+        </div>
+        <div className="stat-card">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-gray-400">Total Tasks</p>
+            <span className="text-2xl">✅</span>
+          </div>
+          <p className="text-3xl font-bold mt-2">{stats.tasks}</p>
+          <p className="text-xs text-gray-500 mt-1">{stats.pendingTasks} pending, {stats.completedTasks} done</p>
+        </div>
+        <div className="stat-card">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-gray-400">AI Status</p>
+            <span className="text-2xl">🤖</span>
+          </div>
+          <div className="mt-2 flex items-center gap-2">
+            <div className="w-2 h-2 bg-green-400 rounded-full pulse-dot"></div>
+            <p className="text-sm font-medium text-green-400">Active</p>
+          </div>
+          <p className="text-xs text-gray-500 mt-1">Real-time intelligence</p>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-1 mb-6 border-b border-[#1a2340] overflow-x-auto">
+        {[
+          { id: "meetings", icon: "📅", label: "Meetings" },
+          { id: "analytics", icon: "📊", label: "Analytics" },
+          { id: "team", icon: "👥", label: "Team Dashboard" },
+          ...(userRole === 'admin' ? [{ id: "admin", icon: "👑", label: "Admin Panel" }] : [])
+        ].map(tab => (
           <button
-            onClick={() => setActiveTab("admin")}
-            className={`px-6 py-3 rounded-t-xl font-semibold transition whitespace-nowrap ${
-              activeTab === "admin"
-                ? "bg-[#111827] text-blue-400 border-b-2 border-blue-400"
-                : "text-gray-400 hover:text-white"
+            key={tab.id}
+            data-tab={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`px-5 py-2.5 rounded-t-xl font-medium transition-all ${
+              activeTab === tab.id
+                ? 'bg-[#1a2340] text-indigo-400 border-b-2 border-indigo-500'
+                : 'text-gray-400 hover:text-white hover:bg-white/5'
             }`}
           >
-            👑 Admin Panel
+            <span className="flex items-center gap-2">
+              <span>{tab.icon}</span>
+              <span>{tab.label}</span>
+            </span>
           </button>
-        )}
+        ))}
       </div>
 
-      {/* MEETINGS TAB */}
+      {/* Meetings Tab Content */}
       {activeTab === "meetings" && (
-        <>
-          {/* STATS CARDS */}
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-5 mb-8">
-            <div className="bg-gradient-to-br from-blue-500/20 to-blue-600/20 border border-blue-500/30 rounded-2xl p-5">
-              <p className="text-gray-300 text-sm">Total Meetings</p>
-              <h2 className="text-3xl font-bold mt-2">{meetings.length}</h2>
-            </div>
-            <div className="bg-gradient-to-br from-green-500/20 to-green-600/20 border border-green-500/30 rounded-2xl p-5">
-              <p className="text-gray-300 text-sm">Active Meetings</p>
-              <h2 className="text-3xl font-bold mt-2">
-                {meetings.filter(m => m.status === "active").length}
-              </h2>
-            </div>
-            <div className="bg-gradient-to-br from-purple-500/20 to-purple-600/20 border border-purple-500/30 rounded-2xl p-5">
-              <p className="text-gray-300 text-sm">Total Transcripts</p>
-              <h2 className="text-3xl font-bold mt-2">
-                {meetings.reduce((sum, m) => sum + (m.transcript?.length || 0), 0)}
-              </h2>
-            </div>
-            <div className="bg-gradient-to-br from-yellow-500/20 to-yellow-600/20 border border-yellow-500/30 rounded-2xl p-5">
-              <p className="text-gray-300 text-sm">Pending Tasks</p>
-              <h2 className="text-3xl font-bold mt-2 text-yellow-400">{pendingTasksCount}</h2>
-            </div>
-            <div className="bg-gradient-to-br from-red-500/20 to-red-600/20 border border-red-500/30 rounded-2xl p-5">
-              <p className="text-gray-300 text-sm">Overdue Tasks</p>
-              <h2 className="text-3xl font-bold mt-2 text-red-400">{overdueTasksCount}</h2>
-            </div>
-          </div>
-
-          {/* MEETING LIST */}
-          <div className="bg-[#111827] border border-[#1f2937] rounded-2xl p-6">
-            <h2 className="text-2xl font-bold mb-4">Meeting History</h2>
-            <div className="space-y-3 max-h-96 overflow-y-auto">
-              {meetings.length === 0 ? (
-                <div className="text-center py-12 text-gray-500">
-                  <p className="text-4xl mb-2">📭</p>
-                  <p>No meetings yet. Click "New Meeting" to start!</p>
-                </div>
-              ) : (
-                meetings.map((meeting) => (
-                  <div
-                    key={meeting._id}
-                    onClick={() => navigate(`/meeting/${meeting._id}`)}
-                    className="bg-[#0b1220] border border-[#1d2942] hover:border-blue-500 transition-all duration-200 rounded-xl p-4 cursor-pointer group"
-                  >
-                    <div className="flex justify-between items-center">
-                      <div>
-                        <h3 className="text-lg font-semibold group-hover:text-blue-400 transition">
-                          {meeting.title || "Untitled Meeting"}
-                        </h3>
-                        <p className="text-gray-500 text-sm mt-1">
-                          {formatDate(meeting.createdAt)} • 
-                          {meeting.transcript?.length || 0} messages • 
-                          {meeting.actionItems?.length || 0} tasks
-                        </p>
-                      </div>
-                      <div className="text-gray-500 group-hover:text-blue-400 transition">
-                        →
-                      </div>
+        <div id="meetings-section" className="glass-card p-6">
+          <h2 className="text-xl font-bold mb-4">Meeting History</h2>
+          <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
+            {meetings.length === 0 ? (
+              <div className="text-center py-12">
+                <p className="text-5xl mb-4">📭</p>
+                <p className="text-gray-400">No meetings yet</p>
+                <p className="text-sm text-gray-500 mt-1">Click "New Meeting" to get started</p>
+              </div>
+            ) : (
+              meetings.map((meeting) => (
+                <div
+                  key={meeting._id}
+                  onClick={() => navigate(`/meeting/${meeting._id}`)}
+                  className="group p-4 rounded-xl bg-[#0a0e1a] border border-[#1a2340] hover:border-indigo-500/50 cursor-pointer transition-all"
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="font-semibold group-hover:text-indigo-400 transition-colors">
+                        {meeting.title || "Untitled Meeting"}
+                      </h3>
+                      <p className="text-sm text-gray-500 mt-1">
+                        {formatDate(meeting.createdAt)} • 
+                        {meeting.transcript?.length || 0} messages • 
+                        {meeting.actionItems?.length || 0} tasks
+                      </p>
+                    </div>
+                    <div className="text-gray-500 group-hover:text-indigo-400 transition-colors">
+                      →
                     </div>
                   </div>
-                ))
-              )}
-            </div>
+                </div>
+              ))
+            )}
           </div>
-        </>
+        </div>
       )}
 
-      {/* ANALYTICS TAB */}
+      {/* Analytics Tab */}
       {activeTab === "analytics" && (
-        <div className="bg-[#111827] border border-[#1f2937] rounded-2xl p-6">
-          <div className="flex justify-between items-center mb-6">
+        <div className="glass-card p-6">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
             <div>
-              <h2 className="text-2xl font-bold">📊 Task Analytics</h2>
-              <p className="text-gray-400 text-sm mt-1">Visual insights from your meetings</p>
+              <h2 className="text-xl font-bold">📊 Task Analytics</h2>
+              <p className="text-sm text-gray-400">Visual insights from your meetings</p>
             </div>
             {meetings.length > 0 && (
               <select
                 value={selectedMeeting || ""}
                 onChange={(e) => setSelectedMeeting(e.target.value)}
-                className="bg-[#0b1220] border border-[#1d2942] rounded-xl p-2 text-white"
+                className="px-4 py-2 rounded-xl bg-[#0a0e1a] border border-[#1a2340] text-white focus:border-indigo-500 outline-none"
               >
                 {meetings.map(meeting => (
                   <option key={meeting._id} value={meeting._id}>
@@ -316,16 +298,16 @@ export default function Home() {
         </div>
       )}
 
-      {/* TEAM DASHBOARD TAB */}
+      {/* Team Dashboard Tab */}
       {activeTab === "team" && (
-        <div className="bg-[#111827] border border-[#1f2937] rounded-2xl p-6">
+        <div className="glass-card p-6">
           <TeamDashboard />
         </div>
       )}
 
-      {/* ADMIN PANEL TAB */}
+      {/* Admin Panel Tab */}
       {activeTab === "admin" && userRole === 'admin' && (
-        <div className="bg-[#111827] border border-[#1f2937] rounded-2xl p-6">
+        <div className="glass-card p-6">
           <AdminPanel />
         </div>
       )}
